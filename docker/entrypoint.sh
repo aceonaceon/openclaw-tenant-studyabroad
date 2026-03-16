@@ -22,4 +22,15 @@ cat "$WS/AGENTS.base.md" "$WS/AGENTS.custom.md" > "$WS/AGENTS.md"
 
 echo "[lobster] Workspace initialized. Fixed files synced, personal files preserved."
 
+# --- Validate required env vars (no file written, key stays in memory only) ---
+echo "[lobster] Gateway starting on port 18789."
+
+if [ -z "${MINIMAX_API_KEY:-}" ]; then
+  echo "[lobster] WARNING: MINIMAX_API_KEY is not set. Agent will not work."
+fi
+
+if [ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
+  echo "[lobster] WARNING: OPENCLAW_GATEWAY_TOKEN is not set. WebChat auth disabled."
+fi
+
 exec "$@"
