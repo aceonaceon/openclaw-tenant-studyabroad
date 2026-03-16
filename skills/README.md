@@ -2,7 +2,7 @@
 
 Place your shared skills here. Each skill should be in its own directory.
 
-These skills are baked into the Docker image and loaded via `skills.load.extraDirs` in openclaw.json5. All tenants share the same skills from the image.
+These skills are baked into the Docker image and loaded via `skills.load.extraDirs` in openclaw.json. All tenants share the same skills from the image.
 
 ## Adding a new skill
 

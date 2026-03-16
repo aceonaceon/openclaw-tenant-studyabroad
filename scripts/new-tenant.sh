@@ -41,52 +41,48 @@ MINIMAX_API_KEY=${API_KEY}
 OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}
 EOF
 
-# Generate openclaw.json5 (uses ${...} env var references, never plaintext keys)
-cat > "$TENANT_DIR/config/openclaw.json5" <<'JSONEOF'
+# Generate openclaw.json (uses ${...} env var references, never plaintext keys)
+cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
 {
-  identity: {
-    name: "Lobster Assistant",
-    theme: "helpful specialist assistant"
+  "identity": {
+    "name": "Lobster Assistant",
+    "theme": "helpful specialist assistant"
   },
-
-  agent: {
-    workspace: "/home/node/.openclaw/workspace",
-    model: {
-      primary: "minimax/MiniMax-M2.5"
+  "agent": {
+    "workspace": "/home/node/.openclaw/workspace",
+    "model": {
+      "primary": "minimax/MiniMax-M2.5"
     }
   },
-
-  models: {
-    providers: {
-      minimax: {
-        apiKey: "${MINIMAX_API_KEY}",
-        baseUrl: "https://api.minimax.io/anthropic",
-        apiFormat: "anthropic-messages",
-        models: {
+  "models": {
+    "providers": {
+      "minimax": {
+        "apiKey": "${MINIMAX_API_KEY}",
+        "baseUrl": "https://api.minimax.io/anthropic",
+        "apiFormat": "anthropic-messages",
+        "models": {
           "MiniMax-M2.5": {
-            reasoning: true,
-            inputTypes: ["text"],
-            cost: { input: 0.3, output: 1.2 },
-            contextWindow: 200000,
-            maxTokens: 8192
+            "reasoning": true,
+            "inputTypes": ["text"],
+            "cost": { "input": 0.3, "output": 1.2 },
+            "contextWindow": 200000,
+            "maxTokens": 8192
           }
         }
       }
     }
   },
-
-  gateway: {
-    bind: "lan",
-    mode: "local",
-    auth: "token",
-    token: "${OPENCLAW_GATEWAY_TOKEN}"
+  "gateway": {
+    "bind": "lan",
+    "mode": "local",
+    "auth": "token",
+    "token": "${OPENCLAW_GATEWAY_TOKEN}"
   },
-
-  skills: {
-    load: {
-      extraDirs: ["/opt/lobster/shared-skills"],
-      watch: true,
-      watchDebounceMs: 250
+  "skills": {
+    "load": {
+      "extraDirs": ["/opt/lobster/shared-skills"],
+      "watch": true,
+      "watchDebounceMs": 250
     }
   }
 }

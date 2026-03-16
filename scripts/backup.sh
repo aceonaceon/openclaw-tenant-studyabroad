@@ -26,7 +26,7 @@ backup_tenant() {
   tar -czf "$backup_file" \
     -C "$tenant_dir" \
     workspace/ \
-    config/openclaw.json5 \
+    config/openclaw.json \
     .env
 
   echo "[lobster] ✓ $tenant → $backup_file"

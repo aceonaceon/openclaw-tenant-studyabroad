@@ -44,7 +44,7 @@
 ├── memory/                 日期記憶檔（永不覆蓋）
 ├── AGENTS.custom.md        客戶自訂指令（不存在才建立）
 ├── AGENTS.md               完整指令（每次啟動自動重組 = base + custom）
-└── openclaw.json5          OpenClaw 設定（env var 引用，無明文 key）
+└── openclaw.json          OpenClaw 設定（env var 引用，無明文 key）
 ```
 
 ### 啟動時檔案處理策略
@@ -203,7 +203,7 @@ cd /srv/lobster/base
 
 1. 建立 `tenants/acme-corp/` 目錄結構
 2. 生成 `.env`（含 MINIMAX_API_KEY + 自動生成的 OPENCLAW_GATEWAY_TOKEN）
-3. 生成 `config/openclaw.json5`（Minimax M2.5 設定，API key 用 `${...}` 引用）
+3. 生成 `config/openclaw.json`（Minimax M2.5 設定，API key 用 `${...}` 引用）
 4. 複製 USER.md 和 AGENTS.custom.md 初始模板到 workspace
 5. 生成 `compose.yml`
 6. 修正目錄權限（uid 1000）
@@ -362,7 +362,7 @@ cd /srv/lobster/base
 
 每個備份 `.tar.gz` 包含：
 - `workspace/`（USER.md、MEMORY.md、AGENTS.custom.md、memory/）
-- `config/openclaw.json5`
+- `config/openclaw.json`
 - `.env`
 
 ### 8.4 備份位置
@@ -449,7 +449,7 @@ nano /srv/lobster/base/tenants/acme-corp/workspace/AGENTS.custom.md
 | AGENTS.custom.md | **需要重啟**（因為 AGENTS.md 在啟動時重組） |
 | MEMORY.md | 不需要 |
 | .env（API key 等） | **需要重啟** |
-| openclaw.json5 | 不需要（OpenClaw 自動熱重載） |
+| openclaw.json | 不需要（OpenClaw 自動熱重載） |
 
 重啟單一客戶：
 
@@ -529,7 +529,7 @@ Layer 1 — 網路層（Caddy）
   管理者透過 localhost 直連
 
 Layer 2 — 設定檔層
-  openclaw.json5 中 API key 只有 "${MINIMAX_API_KEY}" 佔位符
+  openclaw.json 中 API key 只有 "${MINIMAX_API_KEY}" 佔位符
   容器內不存在任何含明文 key 的 .env 檔案
 
 Layer 3 — Process 層
@@ -544,7 +544,7 @@ Host: tenants/client-a/.env          （明文 key，只在 host 端）
   ↓ Docker compose env_file
 Container: process environment       （記憶體中，不落地為檔案）
   ↓ OpenClaw 解析 "${MINIMAX_API_KEY}"
-openclaw.json5: "${MINIMAX_API_KEY}" （只有佔位符，無明文）
+openclaw.json: "${MINIMAX_API_KEY}" （只有佔位符，無明文）
 ```
 
 ### 11.3 各角色能看到什麼？
@@ -556,7 +556,7 @@ openclaw.json5: "${MINIMAX_API_KEY}" （只有佔位符，無明文）
 | USER.md 內容 | 透過 Agent | ✓ | ✓ |
 | AGENTS.md 內容 | 透過 Agent | ✓ | ✓ |
 | API Key 明文 | ✗ | ✗ | ✓（.env） |
-| openclaw.json5 | 看到 "${...}" | 看到 "${...}" | ✓ |
+| openclaw.json | 看到 "${...}" | 看到 "${...}" | ✓ |
 
 ---
 
@@ -630,8 +630,8 @@ docker build -f docker/Dockerfile -t lobster-base .
 nano /srv/lobster/base/tenants/acme-corp/.env
 # 加入：TELEGRAM_BOT_TOKEN=123456:ABC-xxx
 
-# 3. 編輯 openclaw.json5，加入 channels 區塊
-nano /srv/lobster/base/tenants/acme-corp/config/openclaw.json5
+# 3. 編輯 openclaw.json，加入 channels 區塊
+nano /srv/lobster/base/tenants/acme-corp/config/openclaw.json
 # 在 skills 區塊後加入：
 # channels: {
 #   telegram: {
@@ -654,14 +654,14 @@ docker compose restart
 流程類似 Telegram，需要：
 - 在 Discord Developer Portal 建立 Application 和 Bot
 - 取得 Bot Token 和 Guild/Channel ID
-- 加入 .env 和 openclaw.json5
+- 加入 .env 和 openclaw.json
 
 ### 13.3 LINE
 
 流程類似，需要：
 - 在 LINE Developers Console 建立 Messaging API Channel
 - 取得 Channel Access Token 和 Channel Secret
-- 加入 .env 和 openclaw.json5
+- 加入 .env 和 openclaw.json
 
 ---
 
@@ -763,7 +763,7 @@ base/
 │       ├── .env                ← 環境變數（含 API key 明文）
 │       ├── compose.yml         ← Docker Compose 設定
 │       ├── config/
-│       │   └── openclaw.json5  ← OpenClaw 設定（${...} 引用）
+│       │   └── openclaw.json  ← OpenClaw 設定（${...} 引用）
 │       └── workspace/
 │           ├── USER.md         ← 客戶個人資料
 │           ├── MEMORY.md       ← 對話記憶
