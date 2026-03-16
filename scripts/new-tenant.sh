@@ -16,6 +16,12 @@ if [ -z "$TENANT" ] || [ -z "$PORT" ] || [ -z "$DOMAIN" ]; then
   exit 1
 fi
 
+# Check if caddy is available (needed for password hashing)
+if ! command -v caddy &>/dev/null; then
+  echo "[error] caddy not found. Install Caddy first (needed for password hashing)."
+  exit 1
+fi
+
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TENANT_DIR="$BASE_DIR/tenants/$TENANT"
 
@@ -24,8 +30,9 @@ if [ -d "$TENANT_DIR" ]; then
   exit 1
 fi
 
-# Generate gateway token for WebChat authentication
-GW_TOKEN=$(openssl rand -hex 16)
+# Generate WebChat login password (Caddy basic_auth)
+WEBCHAT_PASSWORD=$(openssl rand -base64 12)
+WEBCHAT_HASH=$(caddy hash-password --plaintext "$WEBCHAT_PASSWORD")
 
 echo "[lobster] Creating tenant: $TENANT"
 
@@ -38,7 +45,9 @@ TENANT_NAME=$TENANT
 PORT=$PORT
 DOMAIN=$DOMAIN
 MINIMAX_API_KEY=${API_KEY}
-OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}
+WEBCHAT_USER=$TENANT
+WEBCHAT_PASSWORD=$WEBCHAT_PASSWORD
+WEBCHAT_HASH=$WEBCHAT_HASH
 EOF
 
 # Generate openclaw.json
@@ -88,14 +97,11 @@ cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
   },
   "gateway": {
     "bind": "lan",
-    "mode": "local",
-    "auth": {
-      "mode": "token",
-      "token": "\${OPENCLAW_GATEWAY_TOKEN}"
-    },
+    "mode": "trusted-proxy",
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "controlUi": {
       "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true,
       "allowedOrigins": [
         "https://${DOMAIN}",
         "http://localhost:${PORT}",
@@ -129,13 +135,38 @@ services:
       - .env
     environment:
       - MINIMAX_API_KEY=\${MINIMAX_API_KEY}
-      - OPENCLAW_GATEWAY_TOKEN=\${OPENCLAW_GATEWAY_TOKEN}
     volumes:
       - ./config:/home/node/.openclaw
       - ./workspace:/home/node/.openclaw/workspace
     ports:
       - "${PORT}:18789"
 EOF
+
+# Generate per-tenant Caddyfile snippet
+cat > "$TENANT_DIR/Caddyfile" <<CADDYEOF
+${DOMAIN} {
+  # Caddy handles authentication — OpenClaw trusts the proxy
+  basic_auth {
+    ${TENANT} ${WEBCHAT_HASH}
+  }
+
+  # Inject authenticated user identity for OpenClaw trusted-proxy
+  header_up X-Forwarded-User {http.auth.user.id}
+
+  # Block admin-only paths
+  handle /api/settings* {
+    respond "403 Forbidden" 403
+  }
+  handle /api/admin* {
+    respond "403 Forbidden" 403
+  }
+
+  # Proxy everything else to OpenClaw
+  handle {
+    reverse_proxy 127.0.0.1:${PORT}
+  }
+}
+CADDYEOF
 
 # Fix permissions for node user (uid 1000)
 chown -R 1000:1000 "$TENANT_DIR/config" "$TENANT_DIR/workspace" 2>/dev/null || true
@@ -149,11 +180,15 @@ echo "[lobster] ✓ Tenant '$TENANT' is running on port $PORT"
 echo "[lobster] Workspace: $TENANT_DIR/workspace/"
 echo ""
 echo "Access:"
-echo "  WebChat:  http://localhost:$PORT/webchat"
-echo "  Domain:   https://$DOMAIN/webchat (after Caddy setup)"
-echo "  Token:    $GW_TOKEN"
+echo "  WebChat:  https://$DOMAIN/webchat"
+echo "  Username: $TENANT"
+echo "  Password: $WEBCHAT_PASSWORD"
+echo ""
+echo "Caddy config generated at: $TENANT_DIR/Caddyfile"
 echo ""
 echo "Next steps:"
-echo "  1. Edit $TENANT_DIR/workspace/USER.md with client info"
-echo "  2. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
-echo "  3. Add Caddy reverse proxy entry for $DOMAIN"
+echo "  1. Import the Caddyfile into your main Caddy config:"
+echo "     import $TENANT_DIR/Caddyfile"
+echo "  2. Reload Caddy: sudo systemctl reload caddy"
+echo "  3. Edit $TENANT_DIR/workspace/USER.md with client info"
+echo "  4. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
