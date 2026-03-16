@@ -42,22 +42,21 @@ OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}
 EOF
 
 # Generate openclaw.json (uses ${...} env var references, never plaintext keys)
-# Schema follows OpenClaw 2026.3.x config format:
-#   - identity → agents.list[].identity
-#   - agent.* → agents.defaults
-#   - gateway.token → gateway.auth.token
+# Schema validated against OpenClaw 2026.3.x Zod schema
 cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
 {
   "agents": {
     "defaults": {
       "workspace": "/home/node/.openclaw/workspace",
       "model": {
-        "primary": "minimax/MiniMax-M2.5"
+        "primary": "minimax/MiniMax-M2.5",
+        "fallbacks": []
       }
     },
     "list": [
       {
-        "id": "default",
+        "id": "main",
+        "default": true,
         "identity": {
           "name": "Lobster Assistant",
           "theme": "helpful specialist assistant"
@@ -66,15 +65,18 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     ]
   },
   "models": {
+    "mode": "merge",
     "providers": {
       "minimax": {
         "apiKey": "${MINIMAX_API_KEY}",
         "baseUrl": "https://api.minimax.io/anthropic",
+        "api": "anthropic-messages",
         "models": [
           {
             "id": "MiniMax-M2.5",
+            "name": "MiniMax M2.5",
             "reasoning": true,
-            "inputTypes": ["text"],
+            "input": ["text"],
             "cost": { "input": 0.3, "output": 1.2 },
             "contextWindow": 200000,
             "maxTokens": 8192
@@ -87,6 +89,7 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     "bind": "lan",
     "mode": "local",
     "auth": {
+      "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     }
   },
