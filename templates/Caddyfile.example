@@ -1,34 +1,35 @@
 # Caddy reverse proxy configuration
-# Each tenant gets a subdomain, but ONLY /webchat is exposed to users
-# Gateway Control UI (root path) is blocked — admin uses localhost directly
+# Each tenant gets a subdomain with WebChat access
+# Admin-only paths are blocked — admin uses localhost directly via SSH tunnel
 # Caddy handles HTTPS automatically via Let's Encrypt
 
 # Tenant: client-a
 client-a.yourlobster.com {
-  # WebChat interface (user-facing)
-  handle /webchat* {
-    reverse_proxy 127.0.0.1:21001
-  }
-  # WebSocket connection (required for WebChat)
-  handle /ws* {
-    reverse_proxy 127.0.0.1:21001
-  }
-  # Block everything else (Gateway Control UI, settings, etc.)
-  handle {
+  # Block admin-only paths (Gateway Control UI settings, API endpoints)
+  handle /api/settings* {
     respond "403 Forbidden" 403
+  }
+  handle /api/admin* {
+    respond "403 Forbidden" 403
+  }
+
+  # Allow everything else (WebChat, static assets, WebSocket, etc.)
+  handle {
+    reverse_proxy 127.0.0.1:21001
   }
 }
 
 # Tenant: client-b
 client-b.yourlobster.com {
-  handle /webchat* {
-    reverse_proxy 127.0.0.1:21002
-  }
-  handle /ws* {
-    reverse_proxy 127.0.0.1:21002
-  }
-  handle {
+  handle /api/settings* {
     respond "403 Forbidden" 403
+  }
+  handle /api/admin* {
+    respond "403 Forbidden" 403
+  }
+
+  handle {
+    reverse_proxy 127.0.0.1:21001
   }
 }
 
