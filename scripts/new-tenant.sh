@@ -41,9 +41,10 @@ MINIMAX_API_KEY=${API_KEY}
 OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}
 EOF
 
-# Generate openclaw.json (uses ${...} env var references, never plaintext keys)
-# Schema validated against OpenClaw 2026.3.x Zod schema
-cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
+# Generate openclaw.json
+# Note: uses a mix of literal ${...} for OpenClaw env var refs and shell $DOMAIN for tenant domain.
+# We use a temp file approach to avoid heredoc quoting issues.
+cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
 {
   "agents": {
     "defaults": {
@@ -68,7 +69,7 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     "mode": "merge",
     "providers": {
       "minimax": {
-        "apiKey": "${MINIMAX_API_KEY}",
+        "apiKey": "\${MINIMAX_API_KEY}",
         "baseUrl": "https://api.minimax.io/anthropic",
         "api": "anthropic-messages",
         "models": [
@@ -90,7 +91,15 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     "mode": "local",
     "auth": {
       "mode": "token",
-      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+      "token": "\${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
+    "controlUi": {
+      "allowedOrigins": [
+        "https://${DOMAIN}",
+        "http://localhost:${PORT}",
+        "http://127.0.0.1:${PORT}"
+      ]
     }
   },
   "skills": {
