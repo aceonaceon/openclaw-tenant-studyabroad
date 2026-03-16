@@ -42,17 +42,27 @@ OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}
 EOF
 
 # Generate openclaw.json (uses ${...} env var references, never plaintext keys)
+# Schema follows OpenClaw 2026.3.x config format:
+#   - identity → agents.list[].identity
+#   - agent.* → agents.defaults
+#   - gateway.token → gateway.auth.token
 cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
 {
-  "identity": {
-    "name": "Lobster Assistant",
-    "theme": "helpful specialist assistant"
-  },
-  "agent": {
-    "workspace": "/home/node/.openclaw/workspace",
-    "model": {
-      "primary": "minimax/MiniMax-M2.5"
-    }
+  "agents": {
+    "defaults": {
+      "workspace": "/home/node/.openclaw/workspace",
+      "model": {
+        "primary": "minimax/MiniMax-M2.5"
+      }
+    },
+    "list": [
+      {
+        "identity": {
+          "name": "Lobster Assistant",
+          "theme": "helpful specialist assistant"
+        }
+      }
+    ]
   },
   "models": {
     "providers": {
@@ -75,8 +85,10 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
   "gateway": {
     "bind": "lan",
     "mode": "local",
-    "auth": "token",
-    "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    "auth": {
+      "type": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
   },
   "skills": {
     "load": {
