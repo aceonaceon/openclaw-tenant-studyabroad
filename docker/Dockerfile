@@ -25,4 +25,4 @@ RUN chown -R node:node /opt/lobster
 USER node
 
 ENTRYPOINT ["/opt/lobster/entrypoint.sh"]
-CMD ["node", "dist/index.js"]
+CMD ["openclaw", "gateway", "--port", "18789"]
