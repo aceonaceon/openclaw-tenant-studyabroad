@@ -1,0 +1,15 @@
+# Caddy reverse proxy configuration
+# Each tenant gets a subdomain pointing to its container port
+# Caddy handles HTTPS automatically via Let's Encrypt
+
+# Tenant: client-a
+client-a.yourlobster.com {
+  reverse_proxy 127.0.0.1:21001
+}
+
+# Tenant: client-b
+client-b.yourlobster.com {
+  reverse_proxy 127.0.0.1:21002
+}
+
+# Add more tenants below...

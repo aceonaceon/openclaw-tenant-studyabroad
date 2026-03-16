@@ -1,0 +1,15 @@
+# Tenant runtime data
+tenants/
+
+# Environment files
+.env
+*.env
+
+# OS files
+.DS_Store
+
+# Docker build artifacts
+*.tar
+
+# Logs
+*.log

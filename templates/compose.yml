@@ -1,0 +1,15 @@
+# Template: copy to tenants/<tenant-id>/compose.yml
+# Replace ${VARIABLES} with actual values
+
+services:
+  openclaw:
+    image: ${LOBSTER_IMAGE:-lobster-base:latest}
+    container_name: lobster_${TENANT_NAME}
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config:/home/node/.openclaw
+      - ./workspace:/home/node/.openclaw/workspace
+    ports:
+      - "${PORT}:18789"
