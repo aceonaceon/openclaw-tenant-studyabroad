@@ -57,6 +57,7 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     },
     "list": [
       {
+        "id": "default",
         "identity": {
           "name": "Lobster Assistant",
           "theme": "helpful specialist assistant"
@@ -69,16 +70,16 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
       "minimax": {
         "apiKey": "${MINIMAX_API_KEY}",
         "baseUrl": "https://api.minimax.io/anthropic",
-        "apiFormat": "anthropic-messages",
-        "models": {
-          "MiniMax-M2.5": {
+        "models": [
+          {
+            "id": "MiniMax-M2.5",
             "reasoning": true,
             "inputTypes": ["text"],
             "cost": { "input": 0.3, "output": 1.2 },
             "contextWindow": 200000,
             "maxTokens": 8192
           }
-        }
+        ]
       }
     }
   },
@@ -86,7 +87,6 @@ cat > "$TENANT_DIR/config/openclaw.json" <<'JSONEOF'
     "bind": "lan",
     "mode": "local",
     "auth": {
-      "type": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     }
   },
