@@ -97,8 +97,16 @@ cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
   },
   "gateway": {
     "bind": "lan",
-    "mode": "trusted-proxy",
+    "mode": "remote",
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
+    "auth": {
+      "mode": "trusted-proxy",
+      "trustedProxy": {
+        "userHeader": "x-forwarded-user",
+        "requiredHeaders": ["x-forwarded-proto", "x-forwarded-host"],
+        "allowUsers": []
+      }
+    },
     "controlUi": {
       "allowInsecureAuth": true,
       "dangerouslyDisableDeviceAuth": true,
@@ -139,34 +147,43 @@ services:
       - ./config:/home/node/.openclaw
       - ./workspace:/home/node/.openclaw/workspace
     ports:
-      - "${PORT}:18789"
+      - "127.0.0.1:${PORT}:18789"
 EOF
 
 # Generate per-tenant Caddyfile snippet
 cat > "$TENANT_DIR/Caddyfile" <<CADDYEOF
 ${DOMAIN} {
-  # Caddy handles authentication — OpenClaw trusts the proxy
   basic_auth {
     ${TENANT} ${WEBCHAT_HASH}
   }
 
-  # Inject authenticated user identity for OpenClaw trusted-proxy
-  header_up X-Forwarded-User {http.auth.user.id}
+  @blocked path /api/settings /api/settings/* /api/admin /api/admin/*
+  respond @blocked "403 Forbidden" 403
 
-  # Block admin-only paths
-  handle /api/settings* {
-    respond "403 Forbidden" 403
-  }
-  handle /api/admin* {
-    respond "403 Forbidden" 403
-  }
-
-  # Proxy everything else to OpenClaw
-  handle {
-    reverse_proxy 127.0.0.1:${PORT}
+  reverse_proxy 127.0.0.1:${PORT} {
+    header_up X-Forwarded-User {http.auth.user.id}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
   }
 }
 CADDYEOF
+
+# Auto-register in main Caddyfile (add import if not already present)
+CADDY_MAIN="/etc/caddy/Caddyfile"
+IMPORT_LINE="import $TENANT_DIR/Caddyfile"
+if [ -f "$CADDY_MAIN" ]; then
+  if ! grep -qF "$IMPORT_LINE" "$CADDY_MAIN"; then
+    echo "$IMPORT_LINE" >> "$CADDY_MAIN"
+    echo "[lobster] Added import to $CADDY_MAIN"
+  else
+    echo "[lobster] Import already exists in $CADDY_MAIN"
+  fi
+  sudo systemctl reload caddy
+  echo "[lobster] Caddy reloaded."
+else
+  echo "[lobster] WARNING: $CADDY_MAIN not found. Add this line manually:"
+  echo "  $IMPORT_LINE"
+fi
 
 # Fix permissions for node user (uid 1000)
 chown -R 1000:1000 "$TENANT_DIR/config" "$TENANT_DIR/workspace" 2>/dev/null || true
@@ -184,11 +201,6 @@ echo "  WebChat:  https://$DOMAIN/webchat"
 echo "  Username: $TENANT"
 echo "  Password: $WEBCHAT_PASSWORD"
 echo ""
-echo "Caddy config generated at: $TENANT_DIR/Caddyfile"
-echo ""
 echo "Next steps:"
-echo "  1. Import the Caddyfile into your main Caddy config:"
-echo "     import $TENANT_DIR/Caddyfile"
-echo "  2. Reload Caddy: sudo systemctl reload caddy"
-echo "  3. Edit $TENANT_DIR/workspace/USER.md with client info"
-echo "  4. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
+echo "  1. Edit $TENANT_DIR/workspace/USER.md with client info"
+echo "  2. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
