@@ -3,6 +3,7 @@
 > **GitHub**: https://github.com/aceonaceon/openclaw-tenant-studyabroad
 > **目標環境**: Ubuntu 24 LTS VPS
 > **預設模型**: Minimax M2.5
+> **認證方式**: Caddy basic_auth + OpenClaw trusted-proxy
 
 ---
 
@@ -63,15 +64,29 @@
 Internet
   │
   ▼
-Caddy（自動 HTTPS）
-  ├── client-a.example.com/webchat → 127.0.0.1:21001（只開放 /webchat）
-  ├── client-b.example.com/webchat → 127.0.0.1:21002（只開放 /webchat）
+Caddy（自動 HTTPS + basic_auth 認證）
+  ├── client-a.example.com → 127.0.0.1:21001（basic_auth → trusted-proxy）
+  ├── client-b.example.com → 127.0.0.1:21002（basic_auth → trusted-proxy）
   └── ...
   │
-Docker containers
-  ├── lobster_client-a（port 21001:18789）
-  ├── lobster_client-b（port 21002:18789）
+Docker containers（只綁 127.0.0.1，外部無法直接存取）
+  ├── lobster_client-a（127.0.0.1:21001 → 18789）
+  ├── lobster_client-b（127.0.0.1:21002 → 18789）
   └── ...
+```
+
+### 認證流程
+
+```
+使用者 → https://client.example.com
+  ↓
+Caddy basic_auth（瀏覽器跳出帳密輸入框）
+  ↓ 驗證成功
+Caddy 注入 header: X-Forwarded-User, X-Forwarded-Proto, X-Forwarded-Host
+  ↓
+OpenClaw（trusted-proxy 模式，信任來自 Caddy 的身份 header）
+  ↓
+WebChat 直接連線（不需要 pairing、不需要 gateway token）
 ```
 
 ---
@@ -168,7 +183,7 @@ docker images | grep lobster-base
 
 ```bash
 # 建議每次 build 都加日期標籤
-docker build -f docker/Dockerfile -t lobster-base:2026-03-16 -t lobster-base:latest .
+docker build -f docker/Dockerfile -t lobster-base:2026-03-17 -t lobster-base:latest .
 ```
 
 ### 4.3 什麼時候需要重新 build？
@@ -181,6 +196,30 @@ docker build -f docker/Dockerfile -t lobster-base:2026-03-16 -t lobster-base:lat
 **不需要重新 build 的情況**：
 - 只修改客戶的 USER.md、AGENTS.custom.md、MEMORY.md（這些在 bind mount 裡）
 - 只修改客戶的 .env（環境變數）
+
+### 4.4 更新 OpenClaw 版本
+
+```bash
+cd /srv/lobster/base
+
+# 備份（以防更新後 config schema 不相容）
+./scripts/backup.sh
+
+# 重新 build（--no-cache 確保拉到最新 base image）
+docker build --no-cache -f docker/Dockerfile -t lobster-base:latest .
+
+# 重啟所有客戶
+./scripts/update-all.sh
+
+# 如果更新後 config 報錯，在容器內執行修復
+docker exec -it lobster_<tenant-id> openclaw doctor --fix
+```
+
+> **建議**：如果要穩定運行，可以在 Dockerfile 鎖定版本：
+> ```dockerfile
+> FROM ghcr.io/openclaw/openclaw:v2026.3.12
+> ```
+> 這樣更新就是你手動改版號、重新 build，比較可控。
 
 ---
 
@@ -202,33 +241,36 @@ cd /srv/lobster/base
 ### 5.3 執行後會做的事
 
 1. 建立 `tenants/acme-corp/` 目錄結構
-2. 生成 `.env`（含 MINIMAX_API_KEY + 自動生成的 OPENCLAW_GATEWAY_TOKEN）
-3. 生成 `config/openclaw.json`（Minimax M2.5 設定，API key 用 `${...}` 引用）
+2. 生成 `.env`（含 MINIMAX_API_KEY + WebChat 帳密）
+3. 生成 `config/openclaw.json`（Minimax M2.5 設定，trusted-proxy 認證）
 4. 複製 USER.md 和 AGENTS.custom.md 初始模板到 workspace
-5. 生成 `compose.yml`
-6. 修正目錄權限（uid 1000）
-7. 啟動 Docker container
+5. 生成 `compose.yml`（port 只綁 127.0.0.1）
+6. 生成 `Caddyfile`（basic_auth + 反向代理）
+7. 自動加入 `/etc/caddy/Caddyfile` 的 import 並 reload Caddy
+8. 修正目錄權限（uid 1000）
+9. 啟動 Docker container
 
 ### 5.4 執行後輸出範例
 
 ```
 [lobster] Creating tenant: acme-corp
+[lobster] Added import to /etc/caddy/Caddyfile
+[lobster] Caddy reloaded.
 
 [lobster] ✓ Tenant 'acme-corp' is running on port 21001
 [lobster] Workspace: /srv/lobster/base/tenants/acme-corp/workspace/
 
 Access:
-  WebChat:  http://localhost:21001/webchat
-  Domain:   https://acme.yourlobster.com/webchat (after Caddy setup)
-  Token:    a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+  WebChat:  https://acme.yourlobster.com/webchat
+  Username: acme-corp
+  Password: xK9mB2pL4nQ7rT1w
 
 Next steps:
   1. Edit tenants/acme-corp/workspace/USER.md with client info
   2. Edit tenants/acme-corp/workspace/AGENTS.custom.md for custom rules
-  3. Add Caddy reverse proxy entry for acme.yourlobster.com
 ```
 
-> **重要**：記下輸出的 Token，這是客戶登入 WebChat 用的驗證碼。
+> **重要**：記下輸出的 Username 和 Password，這是客戶登入 WebChat 用的帳密。密碼是自動生成的，以 bcrypt hash 儲存在 Caddyfile 中。
 
 ### 5.5 Port 分配建議
 
@@ -245,46 +287,73 @@ Next steps:
 
 ## 6. 設定 Caddy 反向代理
 
-### 6.1 編輯 Caddyfile
+### 6.1 自動設定（new-tenant.sh 已處理）
 
-```bash
-sudo nano /etc/caddy/Caddyfile
+`new-tenant.sh` 會自動：
+1. 在 `tenants/<tenant>/Caddyfile` 產生該客戶的 Caddy 設定
+2. 在 `/etc/caddy/Caddyfile` 加入 `import` 行
+3. 執行 `sudo systemctl reload caddy`
+
+**正常情況下你不需要手動設定 Caddy。**
+
+### 6.2 自動產生的 Caddyfile 內容
+
+每個客戶的 Caddyfile 長這樣：
+
 ```
-
-### 6.2 為每個客戶加入區塊
-
-```
-# 客戶: acme-corp
 acme.yourlobster.com {
-  # WebChat 介面（使用者可見）
-  handle /webchat* {
-    reverse_proxy 127.0.0.1:21001
+  basic_auth {
+    acme-corp $2a$14$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   }
-  # WebSocket（WebChat 必需）
-  handle /ws* {
-    reverse_proxy 127.0.0.1:21001
-  }
-  # 其餘全部封鎖（Gateway Control UI 等）
-  handle {
-    respond "403 Forbidden" 403
+
+  @blocked path /api/settings /api/settings/* /api/admin /api/admin/*
+  respond @blocked "403 Forbidden" 403
+
+  reverse_proxy 127.0.0.1:21001 {
+    header_up X-Forwarded-User {http.auth.user.id}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
   }
 }
 ```
 
-### 6.3 重新載入 Caddy
+說明：
+- `basic_auth`：瀏覽器會跳出帳密輸入框，驗證後才能存取
+- `@blocked`：封鎖管理 API 路徑（settings、admin）
+- `header_up`：把已認證的使用者身份傳給 OpenClaw
+- `X-Forwarded-User`：OpenClaw 用這個 header 識別使用者身份
+
+### 6.3 手動管理（如需要）
 
 ```bash
+# 查看主 Caddyfile 中的 import 行
+cat /etc/caddy/Caddyfile
+
+# 手動 reload
 sudo systemctl reload caddy
+
+# 查看 Caddy 狀態
+sudo systemctl status caddy
+
+# 如果使用 import 萬用字元（一次 import 所有客戶）
+# 在 /etc/caddy/Caddyfile 中寫：
+import /srv/lobster/base/tenants/*/Caddyfile
 ```
 
-### 6.4 驗證
+### 6.4 更換客戶密碼
 
 ```bash
-# 應回傳 WebChat 頁面
-curl -s https://acme.yourlobster.com/webchat | head -5
+# 生成新的 bcrypt hash
+caddy hash-password --plaintext '新密碼'
 
-# 應回傳 403 Forbidden
-curl -s https://acme.yourlobster.com/
+# 編輯該客戶的 Caddyfile，替換 hash
+nano /srv/lobster/base/tenants/acme-corp/Caddyfile
+
+# 同步更新 .env 中的 WEBCHAT_PASSWORD
+nano /srv/lobster/base/tenants/acme-corp/.env
+
+# Reload Caddy
+sudo systemctl reload caddy
 ```
 
 ### 6.5 DNS 設定
@@ -464,7 +533,7 @@ docker compose restart
 
 ### 10.1 SSH Tunnel（存取 Gateway Control UI）
 
-使用者只能透過 Caddy 存取 `/webchat`，但你作為管理者，可以透過 SSH tunnel 存取完整的 Gateway Control UI：
+使用者只能透過 Caddy 存取（經 basic_auth 認證），但你作為管理者，可以透過 SSH tunnel 直接存取完整的 Gateway Control UI：
 
 ```bash
 # 在你的本機執行
@@ -472,7 +541,7 @@ ssh -L 21001:127.0.0.1:21001 user@your-vps-ip
 
 # 然後在本機瀏覽器開啟
 # http://localhost:21001
-# 即可看到完整的 Gateway Control UI
+# 即可看到完整的 Gateway Control UI（不經 Caddy 認證）
 ```
 
 ### 10.2 常用管理指令
@@ -498,10 +567,14 @@ docker compose restart
 docker compose down
 ```
 
-### 10.3 查看客戶的 Gateway Token
+### 10.3 查看客戶的 WebChat 帳密
 
 ```bash
-grep OPENCLAW_GATEWAY_TOKEN /srv/lobster/base/tenants/acme-corp/.env
+# 密碼（明文）
+grep WEBCHAT_PASSWORD /srv/lobster/base/tenants/acme-corp/.env
+
+# 帳號
+grep WEBCHAT_USER /srv/lobster/base/tenants/acme-corp/.env
 ```
 
 ### 10.4 更換客戶的 API Key
@@ -520,24 +593,52 @@ docker compose restart
 
 ## 11. 安全架構說明
 
-### 11.1 三層防護
+### 11.1 四層防護
 
 ```
-Layer 1 — 網路層（Caddy）
-  使用者只能存取 /webchat 和 /ws
-  Gateway Control UI、settings 等全部回 403
-  管理者透過 localhost 直連
+Layer 1 — 認證層（Caddy basic_auth）
+  使用者必須輸入帳密才能存取任何頁面
+  每個客戶有獨立的帳號密碼
+  密碼以 bcrypt hash 儲存，非明文
 
-Layer 2 — 設定檔層
+Layer 2 — 網路層（Port 隔離）
+  OpenClaw 只綁定 127.0.0.1，外部完全無法直接存取
+  只有 Caddy 能透過 localhost 連到 OpenClaw
+  防止使用者繞過 Caddy 偽造 X-Forwarded-User header
+
+Layer 3 — 路徑層（Caddy @blocked）
+  /api/settings、/api/admin 等管理路徑回 403
+  管理者透過 SSH Tunnel 直連 localhost 管理
+
+Layer 4 — 設定檔層
   openclaw.json 中 API key 只有 "${MINIMAX_API_KEY}" 佔位符
-  容器內不存在任何含明文 key 的 .env 檔案
-
-Layer 3 — Process 層
+  容器內不存在任何含明文 key 的檔案
   API key 只存在於 Docker 注入的 process 環境變數中
-  Agent 無法透過讀檔取得 key
 ```
 
-### 11.2 API Key 流向
+### 11.2 Trusted-Proxy 認證原理
+
+```
+Caddy basic_auth 驗證成功
+  ↓
+Caddy 注入 HTTP headers:
+  X-Forwarded-User: acme-corp     ← 已認證的使用者身份
+  X-Forwarded-Proto: https        ← 原始協定
+  X-Forwarded-Host: acme.example.com  ← 原始主機名
+  ↓
+OpenClaw gateway.auth.mode = "trusted-proxy"
+  ↓
+OpenClaw 從 X-Forwarded-User 讀取身份
+  → 跳過 pairing 流程
+  → 直接建立 WebChat 連線
+```
+
+**關鍵安全要求**：
+- OpenClaw port 必須只綁 127.0.0.1（compose.yml 中 `127.0.0.1:PORT:18789`）
+- 否則外部可以直接發送偽造的 X-Forwarded-User 繞過認證
+- `gateway.trustedProxies` 必須正確設定為 Docker 內部網段
+
+### 11.3 API Key 流向
 
 ```
 Host: tenants/client-a/.env          （明文 key，只在 host 端）
@@ -547,15 +648,16 @@ Container: process environment       （記憶體中，不落地為檔案）
 openclaw.json: "${MINIMAX_API_KEY}" （只有佔位符，無明文）
 ```
 
-### 11.3 各角色能看到什麼？
+### 11.4 各角色能看到什麼？
 
 | 內容 | 使用者（WebChat） | Agent | 管理者（SSH） |
 |------|-------------------|-------|--------------|
 | WebChat 對話 | ✓ | ✓ | ✓ |
-| Gateway Control UI | ✗ | — | ✓ |
+| Gateway Control UI | ✗ | — | ✓（SSH Tunnel） |
 | USER.md 內容 | 透過 Agent | ✓ | ✓ |
 | AGENTS.md 內容 | 透過 Agent | ✓ | ✓ |
 | API Key 明文 | ✗ | ✗ | ✓（.env） |
+| WebChat 密碼 | 自己的 | ✗ | ✓（.env） |
 | openclaw.json | 看到 "${...}" | 看到 "${...}" | ✓ |
 
 ---
@@ -667,7 +769,7 @@ docker compose restart
 
 ## 14. 故障排除
 
-### 14.1 Container 無法啟動
+### 14.1 Container 無法啟動（Restarting 迴圈）
 
 ```bash
 # 查看錯誤訊息
@@ -677,26 +779,101 @@ docker logs lobster_acme-corp
 # 1. Port 已被佔用 → 改用其他 port
 # 2. 權限問題 → chown -R 1000:1000 tenants/acme-corp/
 # 3. Image 不存在 → docker build -f docker/Dockerfile -t lobster-base .
+# 4. CMD 錯誤 → 確認 Dockerfile 使用 openclaw gateway --port 18789
 ```
 
-### 14.2 WebChat 無法連線
+### 14.2 Config invalid 錯誤
+
+```bash
+# 查看具體錯誤
+docker logs lobster_acme-corp | head -20
+
+# 常見 schema 問題：
+# - gateway.mode 只接受 "local" 或 "remote"
+# - gateway.auth.mode 可設為 "trusted-proxy" 或 "token"
+# - models.providers 的 models 欄位必須是 array
+# - model 定義必須有 "name" 欄位
+# - 使用 "api" 而非 "apiFormat"
+# - 使用 "input" 而非 "inputTypes"
+
+# 自動修復
+docker exec -it lobster_acme-corp openclaw doctor --fix
+```
+
+### 14.3 WebChat 黑畫面（無內容）
+
+原因：反向代理擋住了靜態資源（JS、CSS）。
+
+```bash
+# 確認 Caddy 不是只轉發 /webchat 和 /ws
+# 正確做法：反代所有路徑，只封鎖管理路徑
+# 檢查 Caddyfile 是否使用 @blocked 封鎖，而非白名單模式
+cat /srv/lobster/base/tenants/acme-corp/Caddyfile
+```
+
+### 14.4 Pairing Required（WebSocket 1008）
+
+原因：OpenClaw 要求 device pairing，但在 Docker + 反向代理環境下無法完成。
+
+解法：使用 trusted-proxy 認證模式，由 Caddy 處理認證：
+
+```json
+{
+  "gateway": {
+    "auth": {
+      "mode": "trusted-proxy",
+      "trustedProxy": {
+        "userHeader": "x-forwarded-user",
+        "requiredHeaders": ["x-forwarded-proto", "x-forwarded-host"],
+        "allowUsers": []
+      }
+    }
+  }
+}
+```
+
+### 14.5 Origin Not Allowed / Untrusted Proxy
+
+```bash
+# 確認 openclaw.json 有設定 trustedProxies 和 allowedOrigins
+# trustedProxies 必須包含 Docker 內部網段
+# allowedOrigins 必須包含客戶的 https:// 網域
+
+# 查看容器的 Docker 內部 IP
+docker inspect lobster_acme-corp | grep IPAddress
+```
+
+openclaw.json 需要：
+
+```json
+{
+  "gateway": {
+    "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
+    "controlUi": {
+      "allowedOrigins": ["https://acme.yourlobster.com"]
+    }
+  }
+}
+```
+
+### 14.6 WebChat 無法連線
 
 ```bash
 # 1. 確認 container 在跑
 docker ps | grep lobster_acme-corp
 
-# 2. 確認 port 有開
-curl http://localhost:21001/webchat
+# 2. 確認 port 有開（只綁 127.0.0.1）
+curl http://127.0.0.1:21001/webchat
 
 # 3. 確認 Caddy 設定
 sudo systemctl status caddy
-cat /etc/caddy/Caddyfile | grep acme
+cat /etc/caddy/Caddyfile
 
 # 4. 確認 DNS 解析
 dig acme.yourlobster.com
 ```
 
-### 14.3 Agent 回覆錯誤或不回覆
+### 14.7 Agent 回覆錯誤或不回覆
 
 ```bash
 # 查看 container logs
@@ -710,7 +887,7 @@ grep MINIMAX_API_KEY /srv/lobster/base/tenants/acme-corp/.env
 # → 確認 key 有效（到 MiniMax 後台檢查）
 ```
 
-### 14.4 升級後客戶資料不見
+### 14.8 升級後客戶資料不見
 
 **不應該發生**，因為客戶資料在 bind mount 中，container 重建不影響。
 
@@ -721,7 +898,7 @@ cd /srv/lobster/base/backups
 tar -xzf acme-corp_20260316-143000.tar.gz -C /srv/lobster/base/tenants/acme-corp/
 ```
 
-### 14.5 權限錯誤（EACCES）
+### 14.9 權限錯誤（EACCES）
 
 ```bash
 # OpenClaw 容器使用 node user (uid 1000)
@@ -748,7 +925,7 @@ base/
 │   ├── AGENTS.custom.example.md← 客戶自訂範本
 │   └── USER.example.md         ← 使用者資料範本
 ├── scripts/
-│   ├── new-tenant.sh           ← 一鍵新增客戶
+│   ├── new-tenant.sh           ← 一鍵新增客戶（含 Caddy 設定）
 │   ├── update-all.sh           ← 批次升級
 │   └── backup.sh               ← 備份
 ├── skills/
@@ -760,8 +937,9 @@ base/
 │   └── env.example             ← 環境變數模板（參考用）
 ├── tenants/                    ← 客戶資料（git ignored）
 │   └── acme-corp/
-│       ├── .env                ← 環境變數（含 API key 明文）
+│       ├── .env                ← 環境變數（含 API key、WebChat 帳密）
 │       ├── compose.yml         ← Docker Compose 設定
+│       ├── Caddyfile           ← 該客戶的 Caddy 設定（auto-generated）
 │       ├── config/
 │       │   └── openclaw.json  ← OpenClaw 設定（${...} 引用）
 │       └── workspace/
@@ -790,5 +968,7 @@ base/
 | 查看客戶 logs | `docker logs lobster_<id> --tail 50` |
 | 進入客戶容器 | `docker exec -it lobster_<id> /bin/bash` |
 | 查看所有容器 | `docker ps \| grep lobster_` |
-| 查看 Gateway Token | `grep OPENCLAW_GATEWAY_TOKEN tenants/<id>/.env` |
+| 查看客戶帳密 | `grep WEBCHAT /srv/lobster/base/tenants/<id>/.env` |
+| 更換密碼 | `caddy hash-password --plaintext '新密碼'` 後更新 Caddyfile |
 | SSH Tunnel 管理 | `ssh -L <port>:127.0.0.1:<port> user@vps` |
+| Config 自動修復 | `docker exec -it lobster_<id> openclaw doctor --fix` |
