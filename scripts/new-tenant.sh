@@ -168,6 +168,23 @@ ${DOMAIN} {
 }
 CADDYEOF
 
+# Auto-register in main Caddyfile (add import if not already present)
+CADDY_MAIN="/etc/caddy/Caddyfile"
+IMPORT_LINE="import $TENANT_DIR/Caddyfile"
+if [ -f "$CADDY_MAIN" ]; then
+  if ! grep -qF "$IMPORT_LINE" "$CADDY_MAIN"; then
+    echo "$IMPORT_LINE" >> "$CADDY_MAIN"
+    echo "[lobster] Added import to $CADDY_MAIN"
+  else
+    echo "[lobster] Import already exists in $CADDY_MAIN"
+  fi
+  sudo systemctl reload caddy
+  echo "[lobster] Caddy reloaded."
+else
+  echo "[lobster] WARNING: $CADDY_MAIN not found. Add this line manually:"
+  echo "  $IMPORT_LINE"
+fi
+
 # Fix permissions for node user (uid 1000)
 chown -R 1000:1000 "$TENANT_DIR/config" "$TENANT_DIR/workspace" 2>/dev/null || true
 
@@ -184,11 +201,6 @@ echo "  WebChat:  https://$DOMAIN/webchat"
 echo "  Username: $TENANT"
 echo "  Password: $WEBCHAT_PASSWORD"
 echo ""
-echo "Caddy config generated at: $TENANT_DIR/Caddyfile"
-echo ""
 echo "Next steps:"
-echo "  1. Import the Caddyfile into your main Caddy config:"
-echo "     import $TENANT_DIR/Caddyfile"
-echo "  2. Reload Caddy: sudo systemctl reload caddy"
-echo "  3. Edit $TENANT_DIR/workspace/USER.md with client info"
-echo "  4. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
+echo "  1. Edit $TENANT_DIR/workspace/USER.md with client info"
+echo "  2. Edit $TENANT_DIR/workspace/AGENTS.custom.md for custom rules"
