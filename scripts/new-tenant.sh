@@ -99,6 +99,14 @@ cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
     "bind": "lan",
     "mode": "remote",
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
+    "auth": {
+      "mode": "trusted-proxy",
+      "trustedProxy": {
+        "userHeader": "x-forwarded-user",
+        "requiredHeaders": ["x-forwarded-proto", "x-forwarded-host"],
+        "allowUsers": []
+      }
+    },
     "controlUi": {
       "allowInsecureAuth": true,
       "dangerouslyDisableDeviceAuth": true,
@@ -139,7 +147,7 @@ services:
       - ./config:/home/node/.openclaw
       - ./workspace:/home/node/.openclaw/workspace
     ports:
-      - "${PORT}:18789"
+      - "127.0.0.1:${PORT}:18789"
 EOF
 
 # Generate per-tenant Caddyfile snippet
@@ -154,6 +162,8 @@ ${DOMAIN} {
 
   reverse_proxy 127.0.0.1:${PORT} {
     header_up X-Forwarded-User {http.auth.user.id}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
   }
 }
 CADDYEOF
