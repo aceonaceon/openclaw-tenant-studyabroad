@@ -97,7 +97,7 @@ cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
   },
   "gateway": {
     "bind": "lan",
-    "mode": "trusted-proxy",
+    "mode": "remote",
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "controlUi": {
       "allowInsecureAuth": true,
@@ -145,25 +145,15 @@ EOF
 # Generate per-tenant Caddyfile snippet
 cat > "$TENANT_DIR/Caddyfile" <<CADDYEOF
 ${DOMAIN} {
-  # Caddy handles authentication — OpenClaw trusts the proxy
   basic_auth {
     ${TENANT} ${WEBCHAT_HASH}
   }
 
-  # Inject authenticated user identity for OpenClaw trusted-proxy
-  header_up X-Forwarded-User {http.auth.user.id}
+  @blocked path /api/settings /api/settings/* /api/admin /api/admin/*
+  respond @blocked "403 Forbidden" 403
 
-  # Block admin-only paths
-  handle /api/settings* {
-    respond "403 Forbidden" 403
-  }
-  handle /api/admin* {
-    respond "403 Forbidden" 403
-  }
-
-  # Proxy everything else to OpenClaw
-  handle {
-    reverse_proxy 127.0.0.1:${PORT}
+  reverse_proxy 127.0.0.1:${PORT} {
+    header_up X-Forwarded-User {http.auth.user.id}
   }
 }
 CADDYEOF
