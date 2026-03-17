@@ -97,7 +97,7 @@ cat > "$TENANT_DIR/config/openclaw.json" <<JSONEOF
   },
   "gateway": {
     "bind": "lan",
-    "mode": "remote",
+    "mode": "local",
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
       "mode": "trusted-proxy",
